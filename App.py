@@ -8,14 +8,22 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, WebDriverException
 import time
 import io
 import os
+import sys
 from datetime import datetime
 import logging
 
-# Cấu hình logging
-logging.basicConfig(level=logging.INFO)
+# Cấu hình logging chi tiết
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Cấu hình trang
@@ -42,7 +50,21 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
- 
+    .upload-section {
+        background: #f8f9fa;
+        padding: 2rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        border: 1px solid #e9ecef;
+    }
+    .progress-container {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
     .progress-detail {
         background: #e3f2fd;
         padding: 1rem;
@@ -66,7 +88,13 @@ st.markdown("""
         margin: 0.5rem;
         border: 1px solid #f5c6cb;
     }
-   
+    .download-section {
+        background: #f0f8ff;
+        padding: 2rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        border: 1px solid #b6d7ff;
+    }
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -84,73 +112,186 @@ st.markdown("""
         margin: 1rem 0;
         border-left: 4px solid #ffc107;
     }
+    .system-info {
+        background: #e8f4f8;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        border-left: 4px solid #17a2b8;
+        font-size: 0.9rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+def detect_environment():
+    """Phát hiện môi trường chạy"""
+    is_streamlit_cloud = os.environ.get('STREAMLIT_CLOUD', False)
+    is_heroku = os.environ.get('DYNO', False)
+    
+    # Kiểm tra các đường dẫn browser
+    chrome_paths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/opt/google/chrome/chrome'
+    ]
+    
+    available_browsers = []
+    for path in chrome_paths:
+        if os.path.exists(path):
+            available_browsers.append(path)
+    
+    logger.info(f"Môi trường: Streamlit Cloud={is_streamlit_cloud}, Heroku={is_heroku}")
+    logger.info(f"Browsers có sẵn: {available_browsers}")
+    
+    return {
+        'is_cloud': is_streamlit_cloud or is_heroku,
+        'available_browsers': available_browsers
+    }
+
 def create_driver():
-    """Tạo Chrome driver với cấu hình tối ưu"""
+    """Tạo Chrome driver với cấu hình tối ưu cho cloud"""
+    env_info = detect_environment()
+    
     chrome_options = Options()
+    
+    # Cấu hình cơ bản cho cloud
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--disable-background-timer-throttling")
+    chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+    chrome_options.add_argument("--disable-renderer-backgrounding")
+    chrome_options.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
+    chrome_options.add_argument("--disable-ipc-flooding-protection")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
+    chrome_options.add_argument("--disable-images")
+    chrome_options.add_argument("--disable-javascript")
+    chrome_options.add_argument("--remote-debugging-port=9222")
+    chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+    chrome_options.add_argument("--memory-pressure-off")
+    chrome_options.add_argument("--max_old_space_size=4096")
     
+    # Cấu hình cho môi trường cloud
+    if env_info['is_cloud']:
+        chrome_options.add_argument("--single-process")
+        chrome_options.add_argument("--no-zygote")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-setuid-sandbox")
+    
+    # User agent
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    # Tắt automation detection
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # Thử các đường dẫn browser
+    for browser_path in env_info['available_browsers']:
+        try:
+            chrome_options.binary_location = browser_path
+            logger.info(f"Thử browser: {browser_path}")
+            
+            # Thử tạo driver
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            logger.info(f"Tạo driver thành công với {browser_path}")
+            return driver
+            
+        except Exception as e:
+            logger.warning(f"Không thể sử dụng {browser_path}: {str(e)}")
+            continue
+    
+    # Nếu không có browser path nào hoạt động, thử mặc định
     try:
         driver = webdriver.Chrome(options=chrome_options)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        logger.info("Tạo driver thành công với cấu hình mặc định")
         return driver
     except Exception as e:
-        try:
-            service = Service()
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
-        except Exception as e2:
-            logger.error(f"Không thể tạo driver: {str(e2)}")
-            return None
+        logger.error(f"Không thể tạo driver: {str(e)}")
+        return None
+
+def test_driver():
+    """Test driver functionality"""
+    try:
+        driver = create_driver()
+        if driver:
+            driver.get("https://www.google.com")
+            title = driver.title
+            driver.quit()
+            logger.info(f"Driver test thành công: {title}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Driver test thất bại: {str(e)}")
+        return False
 
 def get_entry_from_uniprot_selenium(gene_id, entry_name):
-    """Lấy Entry ID từ UniProt - giống hệt source code Colab"""
+    """Lấy Entry ID từ UniProt với error handling cải thiện"""
     url = f"https://www.uniprot.org/uniprotkb?query={gene_id}"
     
     driver = create_driver()
     if not driver:
+        logger.error("Không thể tạo driver")
         return None
     
     try:
+        logger.info(f"Đang truy cập: {url}")
         driver.get(url)
         
-        # Chờ bảng tải - giống Colab
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "data-table"))
-        )
-        
-        # Chấp nhận cookie - giống Colab
+        # Chờ trang tải với timeout dài hơn
         try:
-            cookie_button = WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "data-table"))
+            )
+        except TimeoutException:
+            logger.warning(f"Timeout chờ bảng tải cho {gene_id}")
+            return None
+        
+        # Chấp nhận cookie
+        try:
+            cookie_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'I agree, dismiss this banner')]"))
             )
             cookie_button.click()
-        except:
-            pass
+            time.sleep(2)
+        except TimeoutException:
+            logger.info("Không có cookie banner hoặc đã được chấp nhận")
         
         html_content = driver.page_source
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Tìm bảng chính xác như Colab
-        table = soup.find('table', class_='hotjar-margin Anr5j data-table')
+        # Tìm bảng với nhiều selector khác nhau
+        table = None
+        table_selectors = [
+            'table.hotjar-margin.Anr5j.data-table',
+            'table.data-table',
+            'table[class*="data-table"]',
+            'table'
+        ]
+        
+        for selector in table_selectors:
+            table = soup.select_one(selector)
+            if table:
+                break
+        
         if not table:
+            logger.warning(f"Không tìm thấy bảng cho {gene_id}")
             return None
         
         tbody = table.find('tbody', translate='no')
         if not tbody:
+            tbody = table.find('tbody')
+        
+        if not tbody:
+            logger.warning(f"Không tìm thấy tbody cho {gene_id}")
             return None
         
         rows = tbody.find_all('tr')
@@ -160,7 +301,10 @@ def get_entry_from_uniprot_selenium(gene_id, entry_name):
                 current_entry_name = cols[3].text.strip()
                 if current_entry_name == entry_name:
                     entry = cols[1].text.strip()
+                    logger.info(f"Tìm thấy entry {entry} cho {gene_id}")
                     return entry
+        
+        logger.warning(f"Không tìm thấy entry name '{entry_name}' cho {gene_id}")
         return None
         
     except Exception as e:
@@ -173,30 +317,31 @@ def get_entry_from_uniprot_selenium(gene_id, entry_name):
             pass
 
 def extract_3d_structure_table(final_url, query, entry_name):
-    """Lấy thông tin từ bảng 3D structure - cải thiện để trả về đầy đủ dữ liệu như Colab"""
+    """Lấy thông tin từ bảng 3D structure với error handling cải thiện"""
     driver = create_driver()
     if not driver:
+        logger.error("Không thể tạo driver cho 3D structure")
         return None
     
     try:
+        logger.info(f"Đang truy cập 3D structure: {final_url}")
         driver.get(final_url)
-        time.sleep(5)
+        time.sleep(8)  # Tăng thời gian chờ
         
         # Chấp nhận cookie
         try:
-            cookie_button = WebDriverWait(driver, 5).until(
+            cookie_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'I agree, dismiss this banner')]"))
             )
             cookie_button.click()
-        except:
-            pass
-        
-        time.sleep(3)
+            time.sleep(3)
+        except TimeoutException:
+            logger.info("Không có cookie banner")
         
         html_content = driver.page_source
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Tìm bảng 3D structure - cải thiện logic tìm kiếm
+        # Tìm bảng 3D structure với nhiều phương pháp
         table = None
         tables = soup.find_all('table')
         
@@ -233,7 +378,7 @@ def extract_3d_structure_table(final_url, query, entry_name):
             logger.warning(f"Không tìm thấy bảng 3D structure cho {query}")
             return None
         
-        # Lấy headers chính xác
+        # Lấy headers
         headers = []
         thead = table.find('thead')
         if thead:
@@ -241,7 +386,7 @@ def extract_3d_structure_table(final_url, query, entry_name):
             if header_row:
                 for th in header_row.find_all(['th', 'td']):
                     header_text = th.get_text(strip=True)
-                    if header_text:  # Chỉ lấy header không rỗng
+                    if header_text:
                         headers.append(header_text)
         
         # Nếu không có thead, lấy từ row đầu tiên
@@ -254,14 +399,13 @@ def extract_3d_structure_table(final_url, query, entry_name):
                     if header_text:
                         headers.append(header_text)
         
-        # Lấy dữ liệu từ tbody
+        # Lấy dữ liệu
         data = []
         tbody = table.find('tbody')
         if tbody:
             rows = tbody.find_all('tr')
         else:
             all_rows = table.find_all('tr')
-            # Bỏ qua header row nếu có
             if all_rows and headers:
                 rows = all_rows[1:]
             else:
@@ -274,14 +418,13 @@ def extract_3d_structure_table(final_url, query, entry_name):
             for cell in cells:
                 cell_text = cell.get_text(strip=True)
                 
-                # Lấy tất cả links trong cell
+                # Lấy links
                 links = cell.find_all('a')
                 if links:
                     link_urls = []
                     for link in links:
                         href = link.get('href', '')
                         if href:
-                            # Xử lý URL đầy đủ
                             if href.startswith('/'):
                                 href = 'https://www.uniprot.org' + href
                             elif not href.startswith('http'):
@@ -289,23 +432,18 @@ def extract_3d_structure_table(final_url, query, entry_name):
                             link_urls.append(href)
                     
                     if link_urls:
-                        # Thêm links vào cuối cell text
                         cell_text = f"{cell_text} | Links: {'; '.join(link_urls)}"
                 
                 row_data.append(cell_text)
             
-            # Chỉ thêm row có dữ liệu
             if row_data and any(cell.strip() for cell in row_data):
-                # Đảm bảo số cột khớp với headers
                 while len(row_data) < len(headers):
                     row_data.append("")
                 
-                # Thêm Query và Entry Name vào đầu
                 full_row = [query, entry_name] + row_data[:len(headers)]
                 data.append(full_row)
         
         if data:
-            # Thêm Query và Entry Name vào headers
             full_headers = ['Query', 'Entry Name'] + headers
             logger.info(f"Lấy được {len(data)} dòng dữ liệu cho {query}")
             return data, full_headers
@@ -332,7 +470,6 @@ def calculate_time_estimate(total_items, current_item, start_time):
     remaining_items = total_items - current_item
     estimated_remaining = remaining_items * avg_time_per_item
     
-    # Chuyển đổi thành phút và giây
     minutes = int(estimated_remaining // 60)
     seconds = int(estimated_remaining % 60)
     
@@ -377,9 +514,9 @@ def process_complete_workflow(df_input):
             # Cập nhật progress
             current_progress = (index + 1) / total_rows
             step_progress.progress(current_progress)
-            overall_progress.progress(current_progress * 0.4)  # 40% cho bước 1
+            overall_progress.progress(current_progress * 0.4)
             
-            # Cập nhật status và time estimate
+            # Cập nhật status
             status_text.text(f"Đang xử lý {index + 1}/{total_rows}: {query}")
             
             # Tính toán thời gian ước tính
@@ -420,7 +557,7 @@ def process_complete_workflow(df_input):
                     st.metric("Tỷ lệ thành công", f"{success_rate:.1f}%")
             
             # Nghỉ giữa các request
-            time.sleep(2)
+            time.sleep(3)
         
         # Hoàn thành bước 1
         step_progress.progress(1.0)
@@ -454,7 +591,7 @@ def process_complete_workflow(df_input):
             # Cập nhật progress
             current_progress = (idx + 1) / len(valid_results)
             step_progress.progress(current_progress)
-            overall_progress.progress(0.4 + (current_progress * 0.6))  # 60% cho bước 2
+            overall_progress.progress(0.4 + (current_progress * 0.6))
             
             # Cập nhật status
             status_text.text(f"Đang lấy 3D structure {idx + 1}/{len(valid_results)}: {query}")
@@ -487,7 +624,7 @@ def process_complete_workflow(df_input):
                     st.metric("Hoàn thành", f"{completion_rate:.1f}%")
             
             # Nghỉ giữa các request
-            time.sleep(3)
+            time.sleep(4)
         
         # Hoàn thành
         overall_progress.progress(1.0)
@@ -512,8 +649,28 @@ def main():
     """Hàm chính"""
     
     # Header
-    st.markdown('<h1 class="main-header">🧬 UniProt Extractor</h1>', unsafe_allow_html=True)
-   
+    st.markdown('<h1 class="main-header">🧬 UniProt 3D Structure Extractor</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Trích xuất thông tin cấu trúc 3D từ UniProt Database</p>', unsafe_allow_html=True)
+    
+    # Hiển thị thông tin hệ thống
+    env_info = detect_environment()
+    with st.expander("🔧 Thông tin hệ thống", expanded=False):
+        st.markdown(f"""
+        <div class="system-info">
+        <strong>Môi trường:</strong> {'Cloud' if env_info['is_cloud'] else 'Local'}<br>
+        <strong>Browsers có sẵn:</strong> {', '.join(env_info['available_browsers']) if env_info['available_browsers'] else 'Không có'}<br>
+        <strong>Python version:</strong> {sys.version}<br>
+        <strong>Streamlit version:</strong> {st.__version__}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Test driver
+        if st.button("🧪 Test Browser Driver"):
+            with st.spinner("Đang test driver..."):
+                if test_driver():
+                    st.success("✅ Driver hoạt động bình thường!")
+                else:
+                    st.error("❌ Driver không hoạt động. Vui lòng kiểm tra cấu hình.")
     
     # Upload section
     st.markdown('<div class="upload-section">', unsafe_allow_html=True)
@@ -545,7 +702,7 @@ def main():
             st.success(f"✅ File hợp lệ - {len(df_input)} dòng dữ liệu")
             
             # Ước tính thời gian
-            estimated_time = len(df_input) * 7  # ~7 giây/item trung bình
+            estimated_time = len(df_input) * 10  # ~10 giây/item trung bình cho cloud
             est_minutes = estimated_time // 60
             est_seconds = estimated_time % 60
             
@@ -644,7 +801,7 @@ def main():
     
     # Footer
     st.markdown("---")
-    st.markdown("**🔬 UniProt lấy mã Alpha fold hoặc PDB** - Văn Quân Bùi")
+    st.markdown("**🔬 UniProt 3D Structure Extractor** - Văn Quân Bùi")
 
 if __name__ == "__main__":
     main()
