@@ -15,14 +15,12 @@ import os
 import sys
 from datetime import datetime
 import logging
+import subprocess
 
-# Cấu hình logging chi tiết
+# Cấu hình logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -34,156 +32,63 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS tùy chỉnh
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #2E86AB;
-        text-align: center;
-        margin-bottom: 1rem;
-        font-weight: bold;
-    }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #666;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .upload-section {
-        background: #f8f9fa;
-        padding: 2rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-        border: 1px solid #e9ecef;
-    }
-    .progress-container {
-        background: #ffffff;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        border: 1px solid #dee2e6;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .progress-detail {
-        background: #e3f2fd;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 0.5rem 0;
-        border-left: 3px solid #2196f3;
-    }
-    .success-metric {
-        background: #d4edda;
-        padding: 1rem;
-        border-radius: 8px;
-        text-align: center;
-        margin: 0.5rem;
-        border: 1px solid #c3e6cb;
-    }
-    .error-metric {
-        background: #f8d7da;
-        padding: 1rem;
-        border-radius: 8px;
-        text-align: center;
-        margin: 0.5rem;
-        border: 1px solid #f5c6cb;
-    }
-    .download-section {
-        background: #f0f8ff;
-        padding: 2rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-        border: 1px solid #b6d7ff;
-    }
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        border-radius: 25px;
-        font-weight: bold;
-        font-size: 1rem;
-        transition: all 0.3s ease;
-    }
-    .time-estimate {
-        background: #fff3cd;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        border-left: 4px solid #ffc107;
-    }
-    .system-info {
-        background: #e8f4f8;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        border-left: 4px solid #17a2b8;
-        font-size: 0.9rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-def detect_environment():
-    """Phát hiện môi trường chạy"""
-    is_streamlit_cloud = os.environ.get('STREAMLIT_CLOUD', False)
-    is_heroku = os.environ.get('DYNO', False)
-    
-    # Kiểm tra các đường dẫn browser
-    chrome_paths = [
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-        '/opt/google/chrome/chrome'
-    ]
-    
-    available_browsers = []
-    for path in chrome_paths:
-        if os.path.exists(path):
-            available_browsers.append(path)
-    
-    logger.info(f"Môi trường: Streamlit Cloud={is_streamlit_cloud}, Heroku={is_heroku}")
-    logger.info(f"Browsers có sẵn: {available_browsers}")
-    
-    return {
-        'is_cloud': is_streamlit_cloud or is_heroku,
-        'available_browsers': available_browsers
-    }
+def install_chromium():
+    """Cài đặt chromium nếu chưa có"""
+    try:
+        # Kiểm tra xem chromium đã được cài đặt chưa
+        result = subprocess.run(['which', 'chromium'], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info(f"Chromium đã được cài đặt tại: {result.stdout.strip()}")
+            return result.stdout.strip()
+        
+        # Thử các đường dẫn khác
+        possible_paths = [
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable'
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                logger.info(f"Tìm thấy browser tại: {path}")
+                return path
+        
+        logger.warning("Không tìm thấy chromium")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Lỗi khi kiểm tra chromium: {e}")
+        return None
 
 def create_driver():
-    """Tạo Chrome driver với cấu hình tối ưu cho cloud"""
-    env_info = detect_environment()
+    """Tạo Chrome driver với cấu hình tối ưu"""
+    # Tìm chromium
+    chromium_path = install_chromium()
     
     chrome_options = Options()
     
-    # Cấu hình cơ bản cho cloud
+    # Cấu hình cơ bản
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-plugins")
+    chrome_options.add_argument("--disable-images")
+    chrome_options.add_argument("--disable-javascript")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--remote-debugging-port=9222")
+    chrome_options.add_argument("--single-process")
+    chrome_options.add_argument("--no-zygote")
     chrome_options.add_argument("--disable-background-timer-throttling")
     chrome_options.add_argument("--disable-backgrounding-occluded-windows")
     chrome_options.add_argument("--disable-renderer-backgrounding")
     chrome_options.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
     chrome_options.add_argument("--disable-ipc-flooding-protection")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-plugins")
-    chrome_options.add_argument("--disable-images")
-    chrome_options.add_argument("--disable-javascript")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    chrome_options.add_argument("--disable-web-security")
-    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
     chrome_options.add_argument("--memory-pressure-off")
     chrome_options.add_argument("--max_old_space_size=4096")
-    
-    # Cấu hình cho môi trường cloud
-    if env_info['is_cloud']:
-        chrome_options.add_argument("--single-process")
-        chrome_options.add_argument("--no-zygote")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-setuid-sandbox")
     
     # User agent
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -192,31 +97,32 @@ def create_driver():
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
-    # Thử các đường dẫn browser
-    for browser_path in env_info['available_browsers']:
-        try:
-            chrome_options.binary_location = browser_path
-            logger.info(f"Thử browser: {browser_path}")
-            
-            # Thử tạo driver
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            logger.info(f"Tạo driver thành công với {browser_path}")
-            return driver
-            
-        except Exception as e:
-            logger.warning(f"Không thể sử dụng {browser_path}: {str(e)}")
-            continue
+    # Đặt binary location nếu tìm thấy
+    if chromium_path:
+        chrome_options.binary_location = chromium_path
     
-    # Nếu không có browser path nào hoạt động, thử mặc định
     try:
-        driver = webdriver.Chrome(options=chrome_options)
+        # Thử tạo driver
+        service = Service()
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        logger.info("Tạo driver thành công với cấu hình mặc định")
+        logger.info("Tạo driver thành công")
         return driver
+        
     except Exception as e:
-        logger.error(f"Không thể tạo driver: {str(e)}")
-        return None
+        logger.error(f"Lỗi tạo driver: {e}")
+        
+        # Thử với webdriver-manager
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            logger.info("Tạo driver thành công với webdriver-manager")
+            return driver
+        except Exception as e2:
+            logger.error(f"Lỗi với webdriver-manager: {e2}")
+            return None
 
 def test_driver():
     """Test driver functionality"""
@@ -227,14 +133,14 @@ def test_driver():
             title = driver.title
             driver.quit()
             logger.info(f"Driver test thành công: {title}")
-            return True
-        return False
+            return True, f"Thành công: {title}"
+        return False, "Không thể tạo driver"
     except Exception as e:
-        logger.error(f"Driver test thất bại: {str(e)}")
-        return False
+        logger.error(f"Driver test thất bại: {e}")
+        return False, f"Lỗi: {str(e)}"
 
 def get_entry_from_uniprot_selenium(gene_id, entry_name):
-    """Lấy Entry ID từ UniProt với error handling cải thiện"""
+    """Lấy Entry ID từ UniProt"""
     url = f"https://www.uniprot.org/uniprotkb?query={gene_id}"
     
     driver = create_driver()
@@ -246,7 +152,7 @@ def get_entry_from_uniprot_selenium(gene_id, entry_name):
         logger.info(f"Đang truy cập: {url}")
         driver.get(url)
         
-        # Chờ trang tải với timeout dài hơn
+        # Chờ trang tải
         try:
             WebDriverWait(driver, 30).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "data-table"))
@@ -263,33 +169,21 @@ def get_entry_from_uniprot_selenium(gene_id, entry_name):
             cookie_button.click()
             time.sleep(2)
         except TimeoutException:
-            logger.info("Không có cookie banner hoặc đã được chấp nhận")
+            logger.info("Không có cookie banner")
         
         html_content = driver.page_source
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Tìm bảng với nhiều selector khác nhau
-        table = None
-        table_selectors = [
-            'table.hotjar-margin.Anr5j.data-table',
-            'table.data-table',
-            'table[class*="data-table"]',
-            'table'
-        ]
-        
-        for selector in table_selectors:
-            table = soup.select_one(selector)
-            if table:
-                break
+        # Tìm bảng
+        table = soup.find('table', class_='data-table')
+        if not table:
+            table = soup.find('table')
         
         if not table:
             logger.warning(f"Không tìm thấy bảng cho {gene_id}")
             return None
         
-        tbody = table.find('tbody', translate='no')
-        if not tbody:
-            tbody = table.find('tbody')
-        
+        tbody = table.find('tbody')
         if not tbody:
             logger.warning(f"Không tìm thấy tbody cho {gene_id}")
             return None
@@ -308,7 +202,7 @@ def get_entry_from_uniprot_selenium(gene_id, entry_name):
         return None
         
     except Exception as e:
-        logger.error(f"Lỗi khi xử lý {gene_id}: {str(e)}")
+        logger.error(f"Lỗi khi xử lý {gene_id}: {e}")
         return None
     finally:
         try:
@@ -317,7 +211,7 @@ def get_entry_from_uniprot_selenium(gene_id, entry_name):
             pass
 
 def extract_3d_structure_table(final_url, query, entry_name):
-    """Lấy thông tin từ bảng 3D structure với error handling cải thiện"""
+    """Lấy thông tin từ bảng 3D structure"""
     driver = create_driver()
     if not driver:
         logger.error("Không thể tạo driver cho 3D structure")
@@ -326,7 +220,7 @@ def extract_3d_structure_table(final_url, query, entry_name):
     try:
         logger.info(f"Đang truy cập 3D structure: {final_url}")
         driver.get(final_url)
-        time.sleep(8)  # Tăng thời gian chờ
+        time.sleep(8)
         
         # Chấp nhận cookie
         try:
@@ -341,11 +235,10 @@ def extract_3d_structure_table(final_url, query, entry_name):
         html_content = driver.page_source
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Tìm bảng 3D structure với nhiều phương pháp
+        # Tìm bảng 3D structure
         table = None
         tables = soup.find_all('table')
         
-        # Tìm bảng có header chứa các từ khóa 3D structure
         structure_keywords = ['SOURCE', 'IDENTIFIER', 'METHOD', 'RESOLUTION', 'CHAIN', 'POSITIONS', 'LINKS']
         
         for t in tables:
@@ -360,13 +253,11 @@ def extract_3d_structure_table(final_url, query, entry_name):
                     header_cells = first_row.find_all(['th', 'td'])
                     headers = [cell.get_text(strip=True).upper() for cell in header_cells]
             
-            # Kiểm tra nếu có ít nhất 3 keywords trong headers
             matching_keywords = sum(1 for keyword in structure_keywords if keyword in ' '.join(headers))
             if matching_keywords >= 3:
                 table = t
                 break
         
-        # Nếu không tìm thấy bảng theo keywords, tìm bảng chứa AlphaFold hoặc PDB
         if not table:
             for t in tables:
                 table_text = t.get_text().upper()
@@ -389,7 +280,6 @@ def extract_3d_structure_table(final_url, query, entry_name):
                     if header_text:
                         headers.append(header_text)
         
-        # Nếu không có thead, lấy từ row đầu tiên
         if not headers:
             first_row = table.find('tr')
             if first_row:
@@ -418,7 +308,6 @@ def extract_3d_structure_table(final_url, query, entry_name):
             for cell in cells:
                 cell_text = cell.get_text(strip=True)
                 
-                # Lấy links
                 links = cell.find_all('a')
                 if links:
                     link_urls = []
@@ -452,7 +341,7 @@ def extract_3d_structure_table(final_url, query, entry_name):
             return None
             
     except Exception as e:
-        logger.error(f"Lỗi khi lấy dữ liệu 3D structure cho {query}: {str(e)}")
+        logger.error(f"Lỗi khi lấy dữ liệu 3D structure cho {query}: {e}")
         return None
     finally:
         try:
@@ -461,7 +350,7 @@ def extract_3d_structure_table(final_url, query, entry_name):
             pass
 
 def calculate_time_estimate(total_items, current_item, start_time):
-    """Tính toán thời gian ước tính hoàn thành"""
+    """Tính toán thời gian ước tính"""
     if current_item == 0:
         return "Đang tính toán..."
     
@@ -479,23 +368,18 @@ def calculate_time_estimate(total_items, current_item, start_time):
         return f"Còn khoảng {seconds} giây"
 
 def process_complete_workflow(df_input):
-    """Xử lý toàn bộ workflow với progress tracking chi tiết"""
-    
-    # Container cho progress
+    """Xử lý toàn bộ workflow"""
     progress_container = st.container()
     
     with progress_container:
-        st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown("### 🔄 Đang xử lý dữ liệu...")
         
-        # Progress tracking
         overall_progress = st.progress(0)
         current_step = st.empty()
         step_progress = st.progress(0)
         status_text = st.empty()
         time_estimate = st.empty()
         
-        # Thống kê real-time
         stats_container = st.container()
         
         start_time = time.time()
@@ -511,20 +395,16 @@ def process_complete_workflow(df_input):
             query = str(row['Query']).strip()
             entry_name = str(row['Entry Name']).strip()
             
-            # Cập nhật progress
             current_progress = (index + 1) / total_rows
             step_progress.progress(current_progress)
             overall_progress.progress(current_progress * 0.4)
             
-            # Cập nhật status
             status_text.text(f"Đang xử lý {index + 1}/{total_rows}: {query}")
             
-            # Tính toán thời gian ước tính
             if index > 0:
                 time_est = calculate_time_estimate(total_rows, index + 1, start_time)
-                time_estimate.markdown(f'<div class="time-estimate">⏱️ {time_est}</div>', unsafe_allow_html=True)
+                time_estimate.text(f"⏱️ {time_est}")
             
-            # Lấy Entry ID
             entry_id = get_entry_from_uniprot_selenium(query, entry_name)
             
             if entry_id:
@@ -543,7 +423,6 @@ def process_complete_workflow(df_input):
                 'Status': status
             })
             
-            # Hiển thị thống kê real-time
             with stats_container:
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -556,31 +435,26 @@ def process_complete_workflow(df_input):
                     success_rate = (success_count / (index + 1)) * 100
                     st.metric("Tỷ lệ thành công", f"{success_rate:.1f}%")
             
-            # Nghỉ giữa các request
             time.sleep(3)
         
-        # Hoàn thành bước 1
         step_progress.progress(1.0)
         overall_progress.progress(0.4)
         
-        # Tạo DataFrame Entry IDs
         df_entry_results = pd.DataFrame(results)
         
         # Bước 2: Lấy 3D Structure data
         current_step.markdown("**🧬 Bước 2/2: Lấy dữ liệu 3D Structure**")
         
-        # Lọc những dòng có Entry ID
         valid_results = df_entry_results[df_entry_results['Entry ID'] != ""]
         
         if len(valid_results) == 0:
-            st.error("❌ Không có Entry ID nào hợp lệ để lấy dữ liệu 3D structure")
+            st.error("❌ Không có Entry ID nào hợp lệ")
             return df_entry_results, None
         
         all_structure_data = []
         all_headers = None
         structure_count = 0
         
-        # Reset time tracking cho bước 2
         step2_start_time = time.time()
         
         for idx, (index, row) in enumerate(valid_results.iterrows()):
@@ -588,18 +462,15 @@ def process_complete_workflow(df_input):
             entry_name = row['Entry Name']
             final_url = row['Final URL']
             
-            # Cập nhật progress
             current_progress = (idx + 1) / len(valid_results)
             step_progress.progress(current_progress)
             overall_progress.progress(0.4 + (current_progress * 0.6))
             
-            # Cập nhật status
             status_text.text(f"Đang lấy 3D structure {idx + 1}/{len(valid_results)}: {query}")
             
-            # Tính toán thời gian ước tính cho bước 2
             if idx > 0:
                 time_est = calculate_time_estimate(len(valid_results), idx + 1, step2_start_time)
-                time_estimate.markdown(f'<div class="time-estimate">⏱️ {time_est}</div>', unsafe_allow_html=True)
+                time_estimate.text(f"⏱️ {time_est}")
             
             result = extract_3d_structure_table(final_url, query, entry_name)
             
@@ -610,7 +481,6 @@ def process_complete_workflow(df_input):
                 all_structure_data.extend(data)
                 structure_count += len(data)
             
-            # Hiển thị thống kê real-time cho bước 2
             with stats_container:
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -623,21 +493,16 @@ def process_complete_workflow(df_input):
                     completion_rate = ((idx + 1) / len(valid_results)) * 100
                     st.metric("Hoàn thành", f"{completion_rate:.1f}%")
             
-            # Nghỉ giữa các request
             time.sleep(4)
         
-        # Hoàn thành
         overall_progress.progress(1.0)
         step_progress.progress(1.0)
         status_text.text("✅ Hoàn thành tất cả!")
         
-        # Tính tổng thời gian
         total_time = time.time() - start_time
         minutes = int(total_time // 60)
         seconds = int(total_time % 60)
-        time_estimate.markdown(f'<div class="time-estimate">🎉 Hoàn thành trong {minutes} phút {seconds} giây!</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        time_estimate.text(f"🎉 Hoàn thành trong {minutes} phút {seconds} giây!")
         
         if all_structure_data:
             df_final_results = pd.DataFrame(all_structure_data, columns=all_headers)
@@ -647,33 +512,20 @@ def process_complete_workflow(df_input):
 
 def main():
     """Hàm chính"""
+    st.markdown("# 🧬 UniProt 3D Structure Extractor")
+    st.markdown("Trích xuất thông tin cấu trúc 3D từ UniProt Database")
     
-    # Header
-    st.markdown('<h1 class="main-header">🧬 UniProt 3D Structure Extractor</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Trích xuất thông tin cấu trúc 3D từ UniProt Database</p>', unsafe_allow_html=True)
-    
-    # Hiển thị thông tin hệ thống
-    env_info = detect_environment()
-    with st.expander("🔧 Thông tin hệ thống", expanded=False):
-        st.markdown(f"""
-        <div class="system-info">
-        <strong>Môi trường:</strong> {'Cloud' if env_info['is_cloud'] else 'Local'}<br>
-        <strong>Browsers có sẵn:</strong> {', '.join(env_info['available_browsers']) if env_info['available_browsers'] else 'Không có'}<br>
-        <strong>Python version:</strong> {sys.version}<br>
-        <strong>Streamlit version:</strong> {st.__version__}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Test driver
+    # Test driver
+    with st.expander("🔧 Kiểm tra hệ thống", expanded=False):
         if st.button("🧪 Test Browser Driver"):
             with st.spinner("Đang test driver..."):
-                if test_driver():
-                    st.success("✅ Driver hoạt động bình thường!")
+                success, message = test_driver()
+                if success:
+                    st.success(f"✅ {message}")
                 else:
-                    st.error("❌ Driver không hoạt động. Vui lòng kiểm tra cấu hình.")
+                    st.error(f"❌ {message}")
     
     # Upload section
-    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
     st.markdown("### 📁 Upload File Excel")
     st.markdown("File Excel cần có **2 cột**: `Query` và `Entry Name`")
     
@@ -682,14 +534,11 @@ def main():
         type=['xlsx', 'xls'],
         help="File Excel với 2 cột: Query và Entry Name"
     )
-    st.markdown('</div>', unsafe_allow_html=True)
     
     if uploaded_file is not None:
         try:
-            # Đọc file
             df_input = pd.read_excel(uploaded_file)
             
-            # Kiểm tra cột
             required_columns = ['Query', 'Entry Name']
             missing_columns = [col for col in required_columns if col not in df_input.columns]
             
@@ -698,77 +547,62 @@ def main():
                 st.error(f"Các cột hiện tại: {list(df_input.columns)}")
                 return
             
-            # Hiển thị thông tin file
             st.success(f"✅ File hợp lệ - {len(df_input)} dòng dữ liệu")
             
-            # Ước tính thời gian
-            estimated_time = len(df_input) * 10  # ~10 giây/item trung bình cho cloud
+            estimated_time = len(df_input) * 12
             est_minutes = estimated_time // 60
             est_seconds = estimated_time % 60
             
             st.info(f"⏱️ Ước tính thời gian xử lý: {est_minutes} phút {est_seconds} giây")
             
-            # Preview dữ liệu
             with st.expander("👀 Xem trước dữ liệu", expanded=True):
                 st.dataframe(df_input.head(10), use_container_width=True)
             
-            # Nút xử lý
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("🚀 Bắt đầu xử lý hoàn chỉnh", type="primary", use_container_width=True):
+                if st.button("🚀 Bắt đầu xử lý", type="primary", use_container_width=True):
                     
-                    # Xử lý workflow
                     df_entry_results, df_final_results = process_complete_workflow(df_input)
                     
                     if df_entry_results is not None:
-                        # Hiển thị kết quả Entry IDs
                         st.markdown("### 📊 Kết quả Entry IDs")
                         
-                        # Metrics
                         success_count = len(df_entry_results[df_entry_results['Entry ID'] != ""])
                         total_count = len(df_entry_results)
                         fail_count = total_count - success_count
                         
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
-                            st.markdown(f'<div class="success-metric"><h3>{total_count}</h3><p>Tổng số</p></div>', unsafe_allow_html=True)
+                            st.metric("Tổng số", total_count)
                         with col2:
-                            st.markdown(f'<div class="success-metric"><h3>{success_count}</h3><p>Thành công</p></div>', unsafe_allow_html=True)
+                            st.metric("Thành công", success_count)
                         with col3:
-                            st.markdown(f'<div class="error-metric"><h3>{fail_count}</h3><p>Thất bại</p></div>', unsafe_allow_html=True)
+                            st.metric("Thất bại", fail_count)
                         with col4:
-                            st.markdown(f'<div class="success-metric"><h3>{success_count/total_count*100:.1f}%</h3><p>Tỷ lệ thành công</p></div>', unsafe_allow_html=True)
+                            st.metric("Tỷ lệ thành công", f"{success_count/total_count*100:.1f}%")
                         
-                        # Bảng Entry IDs
                         with st.expander("📋 Chi tiết Entry IDs", expanded=False):
                             st.dataframe(df_entry_results, use_container_width=True)
                         
-                        # Kết quả 3D Structure
                         if df_final_results is not None:
                             st.markdown("### 🧬 Kết quả 3D Structure")
                             
-                            # Metrics cho 3D Structure
                             unique_proteins = df_final_results['Query'].nunique()
                             total_structures = len(df_final_results)
                             
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.markdown(f'<div class="success-metric"><h3>{total_structures}</h3><p>Tổng dòng dữ liệu</p></div>', unsafe_allow_html=True)
+                                st.metric("Tổng dòng dữ liệu", total_structures)
                             with col2:
-                                st.markdown(f'<div class="success-metric"><h3>{unique_proteins}</h3><p>Số proteins</p></div>', unsafe_allow_html=True)
+                                st.metric("Số proteins", unique_proteins)
                             with col3:
-                                st.markdown(f'<div class="success-metric"><h3>{total_structures/unique_proteins:.1f}</h3><p>Trung bình/protein</p></div>', unsafe_allow_html=True)
+                                st.metric("Trung bình/protein", f"{total_structures/unique_proteins:.1f}")
                             
-                            # Bảng 3D Structure
                             with st.expander("🔬 Chi tiết 3D Structure", expanded=True):
                                 st.dataframe(df_final_results, use_container_width=True)
                             
-                            # Download section
-                            st.markdown('<div class="download-section">', unsafe_allow_html=True)
                             st.markdown("### 💾 Tải xuống kết quả")
-                            st.markdown("File Excel chứa 2 sheets: **3D_Structures** và **Entry_IDs**")
                             
-                            # Tạo file Excel
                             output = io.BytesIO()
                             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                                 df_final_results.to_excel(writer, sheet_name='3D_Structures', index=False)
@@ -776,7 +610,6 @@ def main():
                             
                             output.seek(0)
                             
-                            # Tên file với timestamp
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                             filename = f"UniProt_3D_Structures_{timestamp}.xlsx"
                             
@@ -788,18 +621,14 @@ def main():
                                 use_container_width=True
                             )
                             
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
                         else:
                             st.warning("⚠️ Không lấy được dữ liệu 3D structure nào")
-                    
                     else:
                         st.error("❌ Không thể xử lý dữ liệu")
         
         except Exception as e:
             st.error(f"❌ Lỗi khi đọc file: {str(e)}")
     
-    # Footer
     st.markdown("---")
     st.markdown("**🔬 UniProt 3D Structure Extractor** - Văn Quân Bùi")
 
